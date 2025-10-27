@@ -1,0 +1,31 @@
+{
+  "products": [
+    {
+      "id": "sku_1",
+      "title": "Scarpe running leggere",
+      "description": "Scarpe da corsa leggere, ideali per 5-10 km",
+      "price": 29.99,
+      "currency": "eur",
+      "image": "https://picsum.photos/seed/sku1/400/300",
+      "available": true
+    },
+    {
+      "id": "sku_2",
+      "title": "Borraccia termica 500ml",
+      "description": "Acciaio inox, mantiene caldo/freddo 12h",
+      "price": 14.99,
+      "currency": "eur",
+      "image": "https://picsum.photos/seed/sku2/400/300",
+      "available": true
+    },
+    {
+      "id": "sku_3",
+      "title": "Calze tecniche",
+      "description": "Coppia di calze traspiranti",
+      "price": 9.99,
+      "currency": "eur",
+      "image": "https://picsum.photos/seed/sku3/400/300",
+      "available": true
+    }
+  ]
+}
