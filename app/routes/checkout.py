@@ -1,6 +1,5 @@
-
 import uuid, json
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, Query
 from ..models import CreateSessionRequest, UpdateSessionRequest, Session, CompleteResponse, Cart, CartTotals, LineItem
 from ..payments.stripe_client import create_payment_intent, confirm_payment_intent
 from ..db import get_conn, get_idempotent_response, save_idempotent_response
@@ -41,9 +40,15 @@ def serialize_session(id: str, status: str, cart: Cart, payment_intent_id: str |
     return Session(id=id, status=status, cart=cart, payment_intent_id=payment_intent_id)
 
 @router.post("/checkout/sessions", response_model=Session, summary="Create checkout session")
-async def create_session(req: CreateSessionRequest, x_idempotency_key: str | None = Header(default=None)):
+async def create_session(
+    req: CreateSessionRequest,
+    x_idempotency_key: str | None = Header(default=None),  # header ACP
+):
     conn = get_conn()
-    cached = get_idempotent_response(x_idempotency_key, "create")
+
+    # alias compatibile con GPT Actions (body) + header ACP
+    idem = (req.idempotency_key or x_idempotency_key)
+    cached = get_idempotent_response(idem, "create") if idem else None
     if cached:
         return Session.model_validate_json(cached)
 
@@ -65,8 +70,8 @@ async def create_session(req: CreateSessionRequest, x_idempotency_key: str | Non
     )
 
     session_obj = serialize_session(sid, "requires_confirmation", cart, pi["id"])
-    if x_idempotency_key:
-        save_idempotent_response(x_idempotency_key, "create", session_obj.model_dump_json())
+    if idem:
+        save_idempotent_response(idem, "create", session_obj.model_dump_json())
 
     return session_obj
 
@@ -98,9 +103,14 @@ async def update_session(session_id: str, req: UpdateSessionRequest):
     return serialize_session(session_id, "requires_confirmation", cart, pi_id)
 
 @router.post("/checkout/sessions/{session_id}/complete", response_model=CompleteResponse, summary="Complete checkout session (confirm payment)")
-async def complete_session(session_id: str, x_idempotency_key: str | None = Header(default=None)):
+async def complete_session(
+    session_id: str,
+    idempotency_key: str | None = Query(default=None),             # alias compat GPT Actions (query)
+    x_idempotency_key: str | None = Header(default=None),          # header ACP
+):
     conn = get_conn()
-    cached = get_idempotent_response(x_idempotency_key, "complete")
+    idem = idempotency_key or x_idempotency_key
+    cached = get_idempotent_response(idem, "complete") if idem else None
     if cached:
         return CompleteResponse.model_validate_json(cached)
 
@@ -125,7 +135,7 @@ async def complete_session(session_id: str, x_idempotency_key: str | None = Head
     conn.execute("UPDATE checkout_sessions SET status = ?, updated_at = now() WHERE id = ?", [new_status, session_id])
 
     resp = CompleteResponse(id=session_id, status=new_status, cart=cart, payment_intent_id=pi_id)
-    if x_idempotency_key:
-        save_idempotent_response(x_idempotency_key, "complete", resp.model_dump_json())
+    if idem:
+        save_idempotent_response(idem, "complete", resp.model_dump_json())
 
     return resp

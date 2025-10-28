@@ -38,6 +38,7 @@ class CreateSessionRequest(BaseModel):
     buyer: Buyer
     currency: ISO_CURRENCY = "EUR"
     shared_payment_token: Optional[str] = None
+    idempotency_key: Optional[str] = None  # <-- alias compatibile GPT Actions
 
 class UpdateSessionRequest(BaseModel):
     items: Optional[List[LineItem]] = None
