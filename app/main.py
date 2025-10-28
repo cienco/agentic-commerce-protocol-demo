@@ -1,7 +1,9 @@
-
+# app/main.py
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+
 from .routes.products import router as products_router
 from .routes.checkout import router as checkout_router
 from .routes.webhooks import router as webhooks_router
@@ -13,7 +15,7 @@ app = FastAPI(
     description="ACP-like checkout API for GPT Actions demos. Public OpenAPI at /openapi.json",
 )
 
-# CORS (allow all origins for demo; tighten in prod)
+# CORS: per demo lasciamo tutto aperto (stringi in produzione)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -26,12 +28,48 @@ app.add_middleware(
 def startup():
     init_db()
 
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+
+    # ✅ 1) Inserisci il server dinamico da ENV (deve essere https)
+    base = os.getenv("PUBLIC_BASE_URL", "").strip()
+    if base and base.startswith("https://"):
+        schema["servers"] = [{"url": base}]
+    else:
+        # fallback placeholder (verrà rifiutato dalle Actions se usato)
+        schema["servers"] = [{"url": "https://replace-me.example.com"}]
+
+    # ✅ 2) Aggiungi security scheme per API Key su header X-API-Key
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key",
+        "description": "Provide your API key in the X-API-Key header."
+    }
+    # Applica la security **globale** (puoi toglierla se la definisci endpoint-by-endpoint)
+    schema["security"] = [{"ApiKeyAuth": []}]
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+# monta lo schema OpenAPI dinamico
+app.openapi = custom_openapi
+
 @app.get("/healthz")
 async def healthz():
     return {"status": "ok"}
 
-# public products (no auth)
+# Routers
 app.include_router(products_router, prefix="")
-# commerce routes (with API key dependency inside)
 app.include_router(checkout_router, prefix="")
 app.include_router(webhooks_router, prefix="")
