@@ -24,13 +24,14 @@ def create_payment_intent(amount_minor: int, currency: str, buyer_email: str, sh
         capture_method="automatic",
         metadata=metadata or {},
         confirm=False,
-        automatic_payment_methods={"enabled": True, "allow_redirects": "never"},  # 👈 evita redirect
+        payment_method_types=["card"],  # 👈 forza solo carta, niente redirect
     )
     if pm:
         kwargs["payment_method"] = pm
 
     pi = stripe.PaymentIntent.create(**kwargs)
     return pi
+
 
 
 def confirm_payment_intent(payment_intent_id: str):
