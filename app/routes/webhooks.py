@@ -3,10 +3,10 @@ import os
 import stripe
 from fastapi import APIRouter, Request, HTTPException
 
-router = APIRouter()
+router = APIRouter(tags=["webhooks"])
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY", "")
 
-@router.post("/webhooks/stripe")
+@router.post("/webhooks/stripe", summary="Stripe webhook (test/demo)")
 async def stripe_webhook(request: Request):
     payload = await request.body()
     sig_header = request.headers.get("stripe-signature")
@@ -17,14 +17,5 @@ async def stripe_webhook(request: Request):
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Webhook error: {e}")
 
-    etype = event.get("type")
-    if etype == "payment_intent.succeeded":
-        pi = event["data"]["object"]
-        print(f"[WEBHOOK] PaymentIntent succeeded: {pi['id']}")
-    elif etype == "payment_intent.payment_failed":
-        pi = event["data"]["object"]
-        print(f"[WEBHOOK] PaymentIntent failed: {pi['id']}")
-    else:
-        print(f"[WEBHOOK] Unhandled: {etype}")
-
+    print(f"[WEBHOOK] {event.get('type')}")
     return {"received": True}

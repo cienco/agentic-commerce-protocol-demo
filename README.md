@@ -1,71 +1,41 @@
 
-# ACP Python Demo — FastAPI + Stripe + MotherDuck, deployable on Render
+# ACP-style Merchant API — Render + ChatGPT GPT Actions
 
-This demo extends the ACP-style checkout skeleton with:
-- **Pydantic** payloads approximating ACP Checkout objects
-- **MotherDuck (DuckDB in the cloud)** for persistence (sessions, orders, products)
-- **Render.com** deployment files
+This package exposes an **ACP-like checkout API** you can deploy on **Render.com**
+and hook into **ChatGPT via GPT Actions** (schema = `/openapi.json`).
 
-> ⚠️ Not an official ACP implementation. Adjust payloads to match the latest spec.
+## Features
+- FastAPI with **OpenAPI** (public, read-only) at `/openapi.json`
+- **API Key** auth via `X-API-Key` (required on commerce endpoints)
+- **CORS** enabled
+- Endpoints (spec-ish):
+  - `POST /checkout/sessions` (create) — *idempotent*
+  - `POST /checkout/sessions/{id}` (update)
+  - `POST /checkout/sessions/{id}/complete` (complete) — *idempotent*
+  - `GET /products` (public catalog preview)
+- Multi-item cart + totals (subtotal, discount WELCOME10, tax 22%, shipping 5€ < 50)
+- **MotherDuck/DuckDB** persistence (auto init + seed)
+- **Stripe (test)** via PaymentIntents (SPT mocked)
 
-## Local Quickstart
+## Deploy on Render
+1. Push this folder to a GitHub repo.
+2. In Render → *New* → *Blueprint* → select repo (uses `render.yaml`).
+3. Set env vars:
+   - `API_KEY` (choose a strong secret; used by GPT Actions)
+   - `STRIPE_SECRET_KEY` (test key, `sk_test_...`)
+   - `STRIPE_WEBHOOK_SECRET` (optional unless you configure Stripe webhooks)
+   - `MOTHERDUCK_TOKEN` (optional; if missing, uses local DuckDB)
+   - `MOTHERDUCK_DATABASE` (optional; default `acp_demo`)
+4. Deploy. After boot, note your base URL, e.g.: `https://acp-merchant.onrender.com`
 
-```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
-# Set your Stripe TEST keys and MotherDuck token in .env
-uvicorn app.main:app --reload
-# In another terminal
-python scripts/simulate_agent.py
-```
+## Connect to ChatGPT via GPT Actions
+1. In ChatGPT → *Explore GPTs* → *Create* → *Actions* → *Add action*.
+2. **Schema URL**: paste your Render URL + `/openapi.json`, e.g.  
+   `https://acp-merchant.onrender.com/openapi.json`
+3. **Auth**: select **API Key** and set header **`X-API-Key`** to your `API_KEY` value.
+4. Save the GPT (private or workspace).
 
-Swagger UI: http://127.0.0.1:8000/docs
+Now in chat you can ask your GPT, e.g. “Trova 2 articoli e completa l’ordine”:
+- The GPT will call: `/products` → `/checkout/sessions` → `/checkout/sessions/{id}` → `/checkout/sessions/{id}/complete`
 
-### Env vars (.env)
-```
-STRIPE_SECRET_KEY=sk_test_...
-STRIPE_WEBHOOK_SECRET=whsec_...
-MOTHERDUCK_TOKEN=mdt_...
-MOTHERDUCK_DATABASE=acp_demo   # optional, defaults to 'acp_demo'
-APP_DEBUG=true
-```
-
-### MotherDuck Notes
-- We use `duckdb` Python client. When `MOTHERDUCK_TOKEN` is set, we connect to `md:{MOTHERDUCK_DATABASE}`.
-- If token is omitted, we fall back to a **local** DuckDB file `./local.duckdb`.
-- On first boot we auto-create tables and seed products from `app/data/product_feed.json`.
-
-### Render deploy (one-click via render.yaml)
-1. Push this repo to GitHub.
-2. In Render, **New +** → **Blueprint** → pick your repo.
-3. Add env vars in the Render service:
-   - `STRIPE_SECRET_KEY` (test key)
-   - `STRIPE_WEBHOOK_SECRET` (optional if not using webhooks on Render)
-   - `MOTHERDUCK_TOKEN` (if you want cloud DB)
-   - `MOTHERDUCK_DATABASE` (optional, default `acp_demo`)
-4. Render will run `uvicorn` with `$PORT` automatically from `render.yaml`.
-
-## Endpoints
-- `GET /healthz`
-- `GET /products`
-- `POST /checkout/sessions` → create session + PaymentIntent (requires_confirmation)
-- `POST /checkout/sessions/{session_id}/confirm` → confirm payment
-- `POST /webhooks/stripe`
-
-## Pydantic payloads (approx. ACP)
-**CreateSessionRequest**:
-```json
-{
-  "item": {"product_id":"sku_1","quantity":1},
-  "buyer": {
-    "email":"buyer@example.com",
-    "name":"Mario Rossi",
-    "address": {
-      "line1":"Via Roma 1","city":"Milano","postal_code":"20100","country":"IT"
-    }
-  },
-  "currency":"EUR",
-  "shared_payment_token":"test_spt_visa"
-}
-```
+> Note: this is **not** Instant Checkout. Payments are test-only and SPT is mocked.

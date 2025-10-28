@@ -3,9 +3,9 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from ..db import get_conn
 
-router = APIRouter()
+router = APIRouter(tags=["catalog"])
 
-@router.get("/products")
+@router.get("/products", summary="List products (public)")
 async def list_products():
     conn = get_conn()
     rows = conn.execute("SELECT id as product_id, title, price, currency, image, available FROM products").fetchall()
