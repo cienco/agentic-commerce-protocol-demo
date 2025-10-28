@@ -14,9 +14,16 @@ def get_conn():
     dbname = os.getenv("MOTHERDUCK_DATABASE", "acp_demo")
 
     if token:
+        # 1) Connetti al catalogo root MotherDuck
         os.environ["MOTHERDUCK_TOKEN"] = token
-        conn = duckdb.connect(f"md:{dbname}")
+        conn = duckdb.connect("md:")
+
+        # 2) Crea il database se non esiste e selezionalo
+        #    NB: usa le virgolette per supportare nomi con underscore o maiuscole
+        conn.execute(f'CREATE DATABASE IF NOT EXISTS "{dbname}";')
+        conn.execute(f'USE "{dbname}";')
     else:
+        # Fallback locale
         conn = duckdb.connect("local.duckdb")
 
     DB_CONN = conn
