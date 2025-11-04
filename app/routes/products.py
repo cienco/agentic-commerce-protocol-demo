@@ -11,7 +11,7 @@ def table_columns(conn, table: str) -> set[str]:
 
 @router.get("/products", summary="List products (public)")
 async def list_products(
-    limit: int = Query(100, ge=1, le=500),
+    limit: int | None = Query(None, ge=1),
     offset: int = Query(0, ge=0),
     category: str | None = None,
     q: str | None = None,
@@ -51,6 +51,16 @@ async def list_products(
         params.append(max_price)
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+    
+    limit_sql = ""
+    if limit is not None:
+        limit_sql = " LIMIT ?"
+        params.append(int(limit))
+    
+    offset_sql = " OFFSET ?" if offset > 0 else ""
+    if offset > 0:
+        params.append(int(offset))
+    
     query = f"""
         SELECT
             {id_sel} AS id,
@@ -64,9 +74,8 @@ async def list_products(
             {available_sel}
         FROM products
         {where_sql}
-        LIMIT ? OFFSET ?
+        {limit_sql}{offset_sql}
     """
-    params += [int(limit), int(offset)]
 
     rows = conn.execute(query, params).fetchall()
     items = []
