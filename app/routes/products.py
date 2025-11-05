@@ -1,5 +1,4 @@
 from typing import List, Optional
-import os
 from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn
 from ..models import Product
@@ -16,7 +15,6 @@ def table_has(conn, table: str, col: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
     return any(r[1] == col for r in rows)
 
-# Helper per validare URL lato SQL
 @router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
     request: Request,
@@ -28,7 +26,12 @@ async def list_products(
     color: Optional[str] = None,
     size: Optional[str] = None,
 ):
-    logger.info("QUERY_PARAMS %s", dict(request.query_params))   
+    logger.info("QUERY_PARAMS %s", dict(request.query_params))   # <— log esplicito
+    """
+    Restituisce prodotti in formato ACP esteso con campi:
+    id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
+    Applica sanifiche ACP (title<=150, description<=5000, currency uppercase, image_url valida).
+    """
     conn = get_conn()
 
     # Verifica schema base
@@ -85,6 +88,7 @@ async def list_products(
     params += [int(limit), int(offset)]
     rows = conn.execute(query, params).fetchall()
 
+    # Lista dei prodotti da restituire
     items: List[Product] = []
     skipped = 0
 
@@ -109,6 +113,7 @@ async def list_products(
             skipped += 1
             logger.warning("Product validation skipped id=%s error=%s", r[0], e)
 
-    payload = jsonable_encoder(items)  # Converti gli URL in stringhe
+    # Restituisci la risposta in formato JSON
+    payload = jsonable_encoder(items)
     resp = JSONResponse(content=payload, headers={"X-Items-Skipped": str(skipped)})
     return resp
