@@ -29,7 +29,7 @@ async def list_products(
     logger.info("QUERY_PARAMS %s", dict(request.query_params))   # <— log esplicito
     """
     Restituisce prodotti in formato ACP esteso con campi:
-    id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
+    id, title, description, brand, category, price, currency, image_url, size, color, return_policy, available.
     """
     conn = get_conn()
 
@@ -66,7 +66,6 @@ async def list_products(
             id,
             substr(title, 1, 150) AS title_safe,
             substr(description, 1, 5000) AS desc_safe,
-            ('{base}' || '/product/' || id) AS link,
             brand,
             category,
             price,
@@ -96,7 +95,6 @@ async def list_products(
                 id=str(r[0]),
                 title=str(r[1]) if r[1] is not None else "",
                 description=str(r[2]) if r[2] is not None else "",
-                link=str(r[3]),
                 brand=r[4] or None,
                 category=r[5] or None,
                 price=float(r[6]) if r[6] is not None else 0.0,
