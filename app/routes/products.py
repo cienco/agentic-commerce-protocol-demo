@@ -4,6 +4,7 @@ from ..db import get_conn
 from ..models import Product
 from fastapi.responses import JSONResponse
 from fastapi import Request
+from fastapi.encoders import jsonable_encoder
 import logging
 import os
 
