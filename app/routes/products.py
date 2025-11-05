@@ -1,42 +1,40 @@
 # app/routes/products.py
-from typing import List
+from typing import List, Optional
+import os
 from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn
+from ..models import Product
 
 router = APIRouter(tags=["products"])
 
-def table_columns(conn, table: str) -> set[str]:
+def table_has(conn, table: str, col: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
-    return {r[1] for r in rows}
+    return any(r[1] == col for r in rows)
 
-@router.get("/products", summary="List products (public)")
+@router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    category: str | None = None,
-    q: str | None = None,
-    max_price: float | None = None,
+    category: Optional[str] = None,
+    q: Optional[str] = None,
+    max_price: Optional[float] = None,
+    color: Optional[str] = None,
+    size: Optional[str] = None,
 ):
     """
-    Restituisce prodotti in formato ACP canonico:
-    id, title, brand, category, price, currency, description, image_url, available
+    Restituisce prodotti in formato ACP esteso con campi: id, title, description, link, brand, category,
+    price, currency, image_url, size, color, return_policy, available.
+    Supporta filtri: category, q, max_price, color, size.
     """
     conn = get_conn()
-    cols = table_columns(conn, "products")
 
-    id_sel = "id" if "id" in cols else ("product_id" if "product_id" in cols else None)
-    if not id_sel:
-        raise HTTPException(status_code=500, detail="products table missing 'id'/'product_id' column")
-    if "title" not in cols:
-        raise HTTPException(status_code=500, detail="products table missing 'title' column")
+    # Verifica schema base
+    required = ["id", "title", "description", "price", "currency"]
+    for c in required:
+        if not table_has(conn, "products", c):
+            raise HTTPException(status_code=500, detail=f"products table missing required column '{c}'")
 
-    brand_sel = "brand" if "brand" in cols else "'' AS brand"
-    category_sel = "category" if "category" in cols else "'' AS category"
-    price_sel = "price" if "price" in cols else "0.0 AS price"
-    currency_sel = "currency" if "currency" in cols else "'EUR' AS currency"
-    description_sel = "description" if "description" in cols else "'' AS description"
-    image_sel = "image_url" if "image_url" in cols else ("image AS image_url" if "image" in cols else "'' AS image_url")
-    available_sel = "available" if "available" in cols else "TRUE AS available"
+    base = os.getenv("PUBLIC_BASE_URL", "https://acp-merchant.onrender.com")
 
     where, params = [], []
     if category:
@@ -46,40 +44,100 @@ async def list_products(
         like = f"%{q}%"
         where.append("(title ILIKE ? OR brand ILIKE ? OR category ILIKE ? OR description ILIKE ?)")
         params += [like, like, like, like]
-    if max_price is not None and "price" in cols:
+    if max_price is not None:
         where.append("price <= ?")
         params.append(max_price)
+    if color:
+        where.append("LOWER(color) = LOWER(?)")
+        params.append(color)
+    if size:
+        where.append("replace(size, ',', '.') = replace(?, ',', '.')")
+        params.append(size)
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
+
     query = f"""
         SELECT
-            {id_sel} AS id,
+            id,
             title,
-            {brand_sel},
-            {category_sel},
-            {price_sel},
-            {currency_sel},
-            {description_sel},
-            {image_sel},
-            {available_sel}
+            description,
+            ('{base}' || '/product/' || id) AS link,
+            brand,
+            category,
+            price,
+            currency,
+            image_url,
+            size,
+            color,
+            return_policy,
+            available
         FROM products
         {where_sql}
         LIMIT ? OFFSET ?
     """
     params += [int(limit), int(offset)]
-
     rows = conn.execute(query, params).fetchall()
-    items = []
+
+    items: List[Product] = []
     for r in rows:
-        items.append({
-            "id": r[0],
-            "title": r[1],
-            "brand": r[2],
-            "category": r[3],
-            "price": float(r[4]) if r[4] is not None else 0.0,
-            "currency": r[5],
-            "description": r[6],
-            "image_url": r[7],
-            "available": bool(r[8]) if r[8] is not None else True,
-        })
+        items.append(Product(
+            id=str(r[0]),
+            title=str(r[1]),
+            description=str(r[2]),
+            link=str(r[3]),
+            brand=r[4] or None,
+            category=r[5] or None,
+            price=float(r[6]) if r[6] is not None else 0.0,
+            currency=str(r[7]),
+            image_url=r[8] or None,
+            size=(str(r[9]) if r[9] not in (None, '') else None),
+            color=(r[10] or None),
+            return_policy=(r[11] or None),
+            available=bool(r[12]) if r[12] is not None else True,
+        ))
     return items
+
+
+@router.get("/products/{product_id}", summary="Get product detail", response_model=Product)
+async def get_product(product_id: str):
+    conn = get_conn()
+    base = os.getenv("PUBLIC_BASE_URL", "https://acp-merchant.onrender.com")
+
+    row = conn.execute(f"""
+        SELECT
+            id,
+            title,
+            description,
+            ('{base}' || '/product/' || id) AS link,
+            brand,
+            category,
+            price,
+            currency,
+            image_url,
+            size,
+            color,
+            return_policy,
+            available
+        FROM products
+        WHERE id = ?
+        LIMIT 1
+    """, [product_id]).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    return Product(
+        id=str(row[0]),
+        title=str(row[1]),
+        description=str(row[2]),
+        link=str(row[3]),
+        brand=row[4] or None,
+        category=row[5] or None,
+        price=float(row[6]) if row[6] is not None else 0.0,
+        currency=str(row[7]),
+        image_url=row[8] or None,
+        size=(str(row[9]) if row[9] not in (None, '') else None),
+        color=(row[10] or None),
+        return_policy=(row[11] or None),
+        available=bool(row[12]) if row[12] is not None else True,
+    )

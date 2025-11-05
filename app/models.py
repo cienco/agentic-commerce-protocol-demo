@@ -1,5 +1,5 @@
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, Field, EmailStr, HttpUrl
 from typing import Optional, Literal, List
 
 ISO_CURRENCY = Literal["EUR","USD","GBP"]
@@ -54,3 +54,21 @@ class Session(BaseModel):
 
 class CompleteResponse(Session):
     pass
+
+
+class Product(BaseModel):
+    id: str = Field(..., max_length=100)
+    title: str = Field(..., max_length=150)
+    description: str = Field(..., max_length=5000)
+    link: HttpUrl                          # sintetizzato dal server
+    brand: Optional[str] = None
+    category: Optional[str] = None
+    price: float
+    currency: str = "EUR"
+    image_url: Optional[HttpUrl] = None
+    # nuove colonne presenti in tabella
+    size: Optional[str] = None             # es. "44" o "44.5" (EU)
+    color: Optional[str] = None            # es. "black"
+    return_policy: Optional[str] = None    # testo in inglese
+    # campo comodo lato client (non in tabella)
+    available: bool = True
