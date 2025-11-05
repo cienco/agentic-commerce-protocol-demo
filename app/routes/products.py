@@ -16,11 +16,10 @@ def table_has(conn, table: str, col: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
     return any(r[1] == col for r in rows)
 
-# piccolo helper per validare url lato SQL: lo facciamo direttamente in SELECT con regex
-
+# Helper per validare URL lato SQL
 @router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
-    request: Request,                       # <— aggiungi
+    request: Request,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     category: Optional[str] = None,
@@ -29,12 +28,7 @@ async def list_products(
     color: Optional[str] = None,
     size: Optional[str] = None,
 ):
-    logger.info("QUERY_PARAMS %s", dict(request.query_params))   # <— log esplicito
-    """
-    Restituisce prodotti in formato ACP esteso con campi:
-    id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
-    Applica sanifiche ACP (title<=150, description<=5000, currency uppercase, image_url valida).
-    """
+    logger.info("QUERY_PARAMS %s", dict(request.query_params))   
     conn = get_conn()
 
     # Verifica schema base
@@ -65,11 +59,6 @@ async def list_products(
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
-    # Sanifiche in SQL:
-    # - substr(title,1,150) as title_safe  (ACP)
-    # - substr(description,1,5000) as desc_safe (ACP)
-    # - upper(COALESCE(currency,'EUR')) as currency_safe
-    # - image_url_valid: solo se inizia con http/https, altrimenti NULL
     query = f"""
         SELECT
             id,
@@ -96,7 +85,6 @@ async def list_products(
     params += [int(limit), int(offset)]
     rows = conn.execute(query, params).fetchall()
 
-    # ... dentro list_products, dopo rows = conn.execute(...).fetchall()
     items: List[Product] = []
     skipped = 0
 
@@ -119,58 +107,8 @@ async def list_products(
             ))
         except ValidationError as e:
             skipped += 1
-            # logga id e messaggio: utile per ripulire i pochi record rognosi
             logger.warning("Product validation skipped id=%s error=%s", r[0], e)
 
-    payload = jsonable_encoder(items)  # <-- converte Url/HttpUrl e altri tipi pydantic
+    payload = jsonable_encoder(items)  # Converti gli URL in stringhe
     resp = JSONResponse(content=payload, headers={"X-Items-Skipped": str(skipped)})
     return resp
-
-
-@router.get("/products/{product_id}", summary="Get product detail", response_model=Product)
-async def get_product(product_id: str):
-    conn = get_conn()
-    base = os.getenv("PUBLIC_BASE_URL", "https://acp-merchant.onrender.com")
-
-    row = conn.execute(f"""
-        SELECT
-            id,
-            substr(title, 1, 150) AS title_safe,
-            substr(description, 1, 5000) AS desc_safe,
-            ('{base}' || '/product/' || id) AS link,
-            brand,
-            category,
-            price,
-            upper(COALESCE(currency, 'EUR')) AS currency_safe,
-            CASE
-              WHEN image_url IS NOT NULL
-                   AND regexp_matches(image_url, '^(http|https)://') THEN image_url
-              ELSE NULL
-            END AS image_url_safe,
-            size,
-            color,
-            return_policy,
-            available
-        FROM products
-        WHERE id = ?
-        LIMIT 1
-    """, [product_id]).fetchone()
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Product not found")
-
-    return Product(
-        id=str(row[0]),
-        title=str(row[1]) if row[1] is not None else "",
-        description=str(row[2]) if row[2] is not None else "",
-        link=str(row[3]),
-        brand=row[4] or None,
-        category=row[5] or None,
-        price=float(row[6]) if row[6] is not None else 0.0,
-        currency=str(row[7]) if row[7] else "EUR",
-        image_url=row[8] or None,
-        size=(str(row[9]) if row[9] not in (None, '') else None),
-        color=(row[10] or None),
-        return_policy=(row[11] or None),
-        available=bool(row[12]) if row[12] is not None else True,
-    )
