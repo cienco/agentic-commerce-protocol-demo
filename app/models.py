@@ -19,16 +19,7 @@ class Buyer(BaseModel):
 
 class LineItem(BaseModel):
     product_id: str
-    quantity: int = 1
-    unit_amount: float                      # es. 119.99
-    currency: str = "EUR"
-    title: str = Field(..., max_length=150) # ACP: max 150
-    image_url: Optional[HttpUrl] = None     # validato come URL http/https
-    # opzionali per varianti:
-    color: Optional[str] = None             # es. "black"
-    size: Optional[str] = None              # es. "44" o "44.5"
-    # opzionale se vuoi
-    description: Optional[str] = Field(default=None, max_length=5000)
+    quantity: int = Field(default=1, ge=1, le=100)
 
 class CartTotals(BaseModel):
     subtotal_minor: int
