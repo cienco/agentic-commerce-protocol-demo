@@ -3,6 +3,9 @@ import os
 from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn
 from ..models import Product
+from pydantic import ValidationError
+import logging
+logger = logging.getLogger("acp.products")
 
 router = APIRouter(tags=["products"])
 
@@ -88,24 +91,37 @@ async def list_products(
     params += [int(limit), int(offset)]
     rows = conn.execute(query, params).fetchall()
 
+    # ... dentro list_products, dopo rows = conn.execute(...).fetchall()
     items: List[Product] = []
+    skipped = 0
+
     for r in rows:
-        items.append(Product(
-            id=str(r[0]),
-            title=str(r[1]) if r[1] is not None else "",
-            description=str(r[2]) if r[2] is not None else "",
-            link=str(r[3]),
-            brand=r[4] or None,
-            category=r[5] or None,
-            price=float(r[6]) if r[6] is not None else 0.0,
-            currency=str(r[7]) if r[7] else "EUR",
-            image_url=r[8] or None,
-            size=(str(r[9]) if r[9] not in (None, '') else None),
-            color=(r[10] or None),
-            return_policy=(r[11] or None),
-            available=bool(r[12]) if r[12] is not None else True,
-        ))
-    return items
+        try:
+            items.append(Product(
+                id=str(r[0]),
+                title=str(r[1]) if r[1] is not None else "",
+                description=str(r[2]) if r[2] is not None else "",
+                link=str(r[3]),
+                brand=r[4] or None,
+                category=r[5] or None,
+                price=float(r[6]) if r[6] is not None else 0.0,
+                currency=str(r[7]) if r[7] else "EUR",
+                image_url=r[8] or None,
+                size=(str(r[9]) if r[9] not in (None, '') else None),
+                color=(r[10] or None),
+                return_policy=(r[11] or None),
+                available=bool(r[12]) if r[12] is not None else True,
+            ))
+        except ValidationError as e:
+            skipped += 1
+            # logga id e messaggio: utile per ripulire i pochi record rognosi
+            logger.warning("Product validation skipped id=%s error=%s", r[0], e)
+
+    # opzionale: se vuoi sapere quanti sono stati saltati, puoi anche aggiungere un header
+    from fastapi.responses import JSONResponse
+    resp = JSONResponse([i.model_dump() for i in items])
+    resp.headers["X-Items-Skipped"] = str(skipped)
+    return resp
 
 
 @router.get("/products/{product_id}", summary="Get product detail", response_model=Product)
