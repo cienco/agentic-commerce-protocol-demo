@@ -1,14 +1,13 @@
-from typing import List, Optional
+from typing import List
 from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn
 from ..models import Product
-from pydantic import ValidationError
-from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi import Request
 import logging
-logger = logging.getLogger("acp.products")
+import os
 
+logger = logging.getLogger("acp.products")
 router = APIRouter(tags=["products"])
 
 def table_has(conn, table: str, col: str) -> bool:
@@ -18,19 +17,18 @@ def table_has(conn, table: str, col: str) -> bool:
 @router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
     request: Request,
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
-    category: Optional[str] = None,
-    q: Optional[str] = None,
-    max_price: Optional[float] = None,
-    color: Optional[str] = None,
-    size: Optional[str] = None,
+    limit: int = Query(100, ge=1, le=500, description="Limit the number of products returned."),
+    offset: int = Query(0, ge=0, description="Offset for pagination."),
+    category: str = Query(None, description="Product category, e.g. 'shoes'."),
+    q: str = Query(None, description="Search query for title, brand, category, or description."),
+    max_price: float = Query(None, description="Maximum price filter."),
+    color: str = Query(None, description="Filter by color, e.g. 'red'."),
+    size: str = Query(None, description="Filter by size, e.g. '44', '44.5'.")
 ):
     logger.info("QUERY_PARAMS %s", dict(request.query_params))   # <— log esplicito
     """
     Restituisce prodotti in formato ACP esteso con campi:
     id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
-    Applica sanifiche ACP (title<=150, description<=5000, currency uppercase, image_url valida).
     """
     conn = get_conn()
 
@@ -88,7 +86,6 @@ async def list_products(
     params += [int(limit), int(offset)]
     rows = conn.execute(query, params).fetchall()
 
-    # Lista dei prodotti da restituire
     items: List[Product] = []
     skipped = 0
 
@@ -113,7 +110,6 @@ async def list_products(
             skipped += 1
             logger.warning("Product validation skipped id=%s error=%s", r[0], e)
 
-    # Restituisci la risposta in formato JSON
     payload = jsonable_encoder(items)
     resp = JSONResponse(content=payload, headers={"X-Items-Skipped": str(skipped)})
     return resp
