@@ -4,6 +4,8 @@ from fastapi import APIRouter, HTTPException, Query
 from ..db import get_conn
 from ..models import Product
 from pydantic import ValidationError
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 import logging
 logger = logging.getLogger("acp.products")
 
@@ -117,10 +119,8 @@ async def list_products(
             # logga id e messaggio: utile per ripulire i pochi record rognosi
             logger.warning("Product validation skipped id=%s error=%s", r[0], e)
 
-    # opzionale: se vuoi sapere quanti sono stati saltati, puoi anche aggiungere un header
-    from fastapi.responses import JSONResponse
-    resp = JSONResponse([i.model_dump() for i in items])
-    resp.headers["X-Items-Skipped"] = str(skipped)
+    payload = jsonable_encoder(items)  # <-- converte Url/HttpUrl e altri tipi pydantic
+    resp = JSONResponse(content=payload, headers={"X-Items-Skipped": str(skipped)})
     return resp
 
 
