@@ -1,4 +1,3 @@
-# app/routes/products.py
 from typing import List, Optional
 import os
 from fastapi import APIRouter, HTTPException, Query
@@ -11,6 +10,8 @@ def table_has(conn, table: str, col: str) -> bool:
     rows = conn.execute(f"PRAGMA table_info('{table}')").fetchall()
     return any(r[1] == col for r in rows)
 
+# piccolo helper per validare url lato SQL: lo facciamo direttamente in SELECT con regex
+
 @router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
     limit: int = Query(100, ge=1, le=500),
@@ -22,9 +23,9 @@ async def list_products(
     size: Optional[str] = None,
 ):
     """
-    Restituisce prodotti in formato ACP esteso con campi: id, title, description, link, brand, category,
-    price, currency, image_url, size, color, return_policy, available.
-    Supporta filtri: category, q, max_price, color, size.
+    Restituisce prodotti in formato ACP esteso con campi:
+    id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
+    Applica sanifiche ACP (title<=150, description<=5000, currency uppercase, image_url valida).
     """
     conn = get_conn()
 
@@ -56,17 +57,26 @@ async def list_products(
 
     where_sql = (" WHERE " + " AND ".join(where)) if where else ""
 
+    # Sanifiche in SQL:
+    # - substr(title,1,150) as title_safe  (ACP)
+    # - substr(description,1,5000) as desc_safe (ACP)
+    # - upper(COALESCE(currency,'EUR')) as currency_safe
+    # - image_url_valid: solo se inizia con http/https, altrimenti NULL
     query = f"""
         SELECT
             id,
-            title,
-            description,
+            substr(title, 1, 150) AS title_safe,
+            substr(description, 1, 5000) AS desc_safe,
             ('{base}' || '/product/' || id) AS link,
             brand,
             category,
             price,
-            currency,
-            image_url,
+            upper(COALESCE(currency, 'EUR')) AS currency_safe,
+            CASE
+              WHEN image_url IS NOT NULL
+                   AND regexp_matches(image_url, '^(http|https)://') THEN image_url
+              ELSE NULL
+            END AS image_url_safe,
             size,
             color,
             return_policy,
@@ -82,13 +92,13 @@ async def list_products(
     for r in rows:
         items.append(Product(
             id=str(r[0]),
-            title=str(r[1]),
-            description=str(r[2]),
+            title=str(r[1]) if r[1] is not None else "",
+            description=str(r[2]) if r[2] is not None else "",
             link=str(r[3]),
             brand=r[4] or None,
             category=r[5] or None,
             price=float(r[6]) if r[6] is not None else 0.0,
-            currency=str(r[7]),
+            currency=str(r[7]) if r[7] else "EUR",
             image_url=r[8] or None,
             size=(str(r[9]) if r[9] not in (None, '') else None),
             color=(r[10] or None),
@@ -106,14 +116,18 @@ async def get_product(product_id: str):
     row = conn.execute(f"""
         SELECT
             id,
-            title,
-            description,
+            substr(title, 1, 150) AS title_safe,
+            substr(description, 1, 5000) AS desc_safe,
             ('{base}' || '/product/' || id) AS link,
             brand,
             category,
             price,
-            currency,
-            image_url,
+            upper(COALESCE(currency, 'EUR')) AS currency_safe,
+            CASE
+              WHEN image_url IS NOT NULL
+                   AND regexp_matches(image_url, '^(http|https)://') THEN image_url
+              ELSE NULL
+            END AS image_url_safe,
             size,
             color,
             return_policy,
@@ -128,13 +142,13 @@ async def get_product(product_id: str):
 
     return Product(
         id=str(row[0]),
-        title=str(row[1]),
-        description=str(row[2]),
+        title=str(row[1]) if row[1] is not None else "",
+        description=str(row[2]) if row[2] is not None else "",
         link=str(row[3]),
         brand=row[4] or None,
         category=row[5] or None,
         price=float(row[6]) if row[6] is not None else 0.0,
-        currency=str(row[7]),
+        currency=str(row[7]) if row[7] else "EUR",
         image_url=row[8] or None,
         size=(str(row[9]) if row[9] not in (None, '') else None),
         color=(row[10] or None),
