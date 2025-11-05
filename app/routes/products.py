@@ -6,6 +6,7 @@ from ..models import Product
 from pydantic import ValidationError
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
+from fastapi import Request
 import logging
 logger = logging.getLogger("acp.products")
 
@@ -19,6 +20,7 @@ def table_has(conn, table: str, col: str) -> bool:
 
 @router.get("/products", summary="List products (public)", response_model=List[Product])
 async def list_products(
+    request: Request,                       # <— aggiungi
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     category: Optional[str] = None,
@@ -27,6 +29,7 @@ async def list_products(
     color: Optional[str] = None,
     size: Optional[str] = None,
 ):
+    logger.info("QUERY_PARAMS %s", dict(request.query_params))   # <— log esplicito
     """
     Restituisce prodotti in formato ACP esteso con campi:
     id, title, description, link, brand, category, price, currency, image_url, size, color, return_policy, available.
